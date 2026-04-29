@@ -20,7 +20,7 @@ const ICON_MAP: Record<string, any> = {
 };
 
 export default function MainQuiz() {
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [state, setState] = useState<QuizState>({
     currentStep: 'landing',
@@ -32,6 +32,14 @@ export default function MainQuiz() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [detailedError, setDetailedError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -104,30 +112,66 @@ export default function MainQuiz() {
   };
 
   const handleCapture = async () => {
-    if (!resultsRef.current) return;
+    if (!resultRef.current) {
+      setToast({ message: "Unable to find results container.", type: 'error' });
+      return;
+    }
+    
     setIsCapturing(true);
+    setToast({ message: "Preparing your diagnostic report...", type: 'info' });
+    
+    // Small delay to ensure all assets are ready and layout is stable
+    await new Promise(resolve => setTimeout(resolve, 600));
+
     try {
-      const canvas = await html2canvas(resultsRef.current, {
-        backgroundColor: '#0A0A0A',
+      const canvas = await html2canvas(resultRef.current, {
+        backgroundColor: "#ffffff",
         scale: 2,
-        logging: false,
         useCORS: true,
+        logging: false,
         onclone: (clonedDoc) => {
-          // You can modify the cloned DOM before capturing if needed
-          const el = clonedDoc.querySelector('[data-capture-ignore]');
-          if (el) (el as HTMLElement).style.display = 'none';
+          // Ensure elements with light text are visible on white background
+          const elements = clonedDoc.querySelectorAll('.text-white, .text-\\[\\#E5E5E5\\], .text-text-dim, .text-accent');
+          elements.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            if (htmlEl.classList.contains('text-accent')) {
+              htmlEl.style.color = '#00D1FF'; // Keep accent color visible
+            } else {
+              htmlEl.style.color = '#1A1A1A'; // Darken light text
+            }
+          });
+          
+          // Fix glass panels
+          const glassPanels = clonedDoc.querySelectorAll('.glass, .bg-bg-card');
+          glassPanels.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            htmlEl.style.background = '#f1f5f9';
+            htmlEl.style.borderColor = '#cbd5e1';
+          });
+
+          // Hide elements explicitly marked for ignore
+          const ignoreElements = clonedDoc.querySelectorAll('[data-capture-ignore]');
+          ignoreElements.forEach((el) => {
+            (el as HTMLElement).style.display = 'none';
+          });
         }
       });
       
-      const image = canvas.toDataURL('image/png');
+      const image = canvas.toDataURL('image/png', 1.0);
       const link = document.createElement('a');
       link.href = image;
-      link.download = `AI-Readiness-${state.selectedField?.replace(/\s+/g, '-')}-${totalScore}.png`;
+      link.download = `ai-readiness-result.png`;
+      document.body.appendChild(link);
       link.click();
-    } catch (err) {
+      document.body.removeChild(link);
+      
+      setToast({ message: "Report captured successfully!", type: 'success' });
+    } catch (err: any) {
       console.error('Screenshot failed:', err);
-      // Fallback: Notify user to take manual screenshot
-      alert('Automatic capture failed. Please take a manual screenshot of your report!');
+      setToast({ 
+        message: 'Capture failed. Please try manual screenshot or open in new tab.', 
+        type: 'error' 
+      });
     } finally {
       setIsCapturing(false);
     }
@@ -435,8 +479,8 @@ export default function MainQuiz() {
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-12"
             >
-              <div ref={resultsRef} className="space-y-12 p-1 bg-brand-bg">
-                <div className="glass rounded-[2rem] p-10 md:p-16 text-center relative overflow-hidden">
+              <div ref={resultRef} className="space-y-12 p-8 bg-white text-black rounded-[2rem]">
+                <div className="glass rounded-[2rem] p-10 md:p-16 text-center relative overflow-hidden bg-slate-50 border-slate-200">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-accent/20 blur-[100px] -mr-48 -mt-48 rounded-full"></div>
                 <div className="relative z-10 space-y-8">
                   <div className="inline-block px-4 py-1.5 rounded-full bg-accent-muted/30 text-accent text-[10px] font-black uppercase tracking-[0.2em] border border-accent/20">
@@ -654,9 +698,46 @@ USING (auth.uid() = user_id);`}
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
         onSuccess={() => {
-          // You could show a success toast here if you had one
+          setToast({ message: "Authentication successful!", type: 'success' });
         }} 
       />
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, transition: { duration: 0.2 } }}
+            className="fixed bottom-12 left-1/2 z-[100] min-w-[320px] max-w-[90vw]"
+          >
+            <div className={`
+              px-6 py-4 rounded-2xl flex items-center gap-4 border shadow-2xl backdrop-blur-xl
+              ${toast.type === 'error' ? 'bg-rose-500/10 border-rose-500/20 text-rose-300' : ''}
+              ${toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : ''}
+              ${toast.type === 'info' ? 'bg-accent/10 border-accent/20 text-accent' : ''}
+            `}>
+              {toast.type === 'error' && <AlertCircle size={20} className="flex-shrink-0" />}
+              {toast.type === 'success' && <CheckCircle2 size={20} className="flex-shrink-0" />}
+              {toast.type === 'info' && <RefreshCw size={20} className="animate-spin flex-shrink-0" />}
+              
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-60">
+                  {toast.type === 'error' ? 'System Error' : toast.type === 'success' ? 'Task Complete' : 'Processing'}
+                </span>
+                <p className="text-sm font-bold leading-tight">{toast.message}</p>
+              </div>
+
+              <button 
+                onClick={() => setToast(null)}
+                className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <ArrowLeft size={16} className="rotate-90 opacity-40" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
