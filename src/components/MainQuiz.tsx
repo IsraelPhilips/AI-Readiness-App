@@ -30,6 +30,7 @@ export default function MainQuiz() {
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [detailedError, setDetailedError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -145,13 +146,16 @@ export default function MainQuiz() {
           if (error) {
             console.error('CRITICAL: Database write failed:', error);
             setSaveStatus('error');
+            setDetailedError(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` - Hint: ${error.hint}` : ''));
           } else {
             console.log('Database sync successful. Record ID:', data?.[0]?.id);
             setSaveStatus('saved');
+            setDetailedError(null);
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('Unexpected error during database sync:', err);
           setSaveStatus('error');
+          setDetailedError(err.message || 'Unknown projection error');
         }
       };
       saveResult();
@@ -431,9 +435,16 @@ export default function MainQuiz() {
                         </div>
                       )}
                       {saveStatus === 'error' && (
-                        <div className="flex items-center gap-2 text-rose-400 text-[8px] font-black uppercase tracking-widest">
-                          <AlertCircle size={10} />
-                          Sync Interrupted
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="flex items-center gap-2 text-rose-400 text-[8px] font-black uppercase tracking-widest">
+                            <AlertCircle size={10} />
+                            Sync Interrupted
+                          </div>
+                          {detailedError && (
+                            <div className="max-w-xs p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] text-rose-300 font-mono text-center break-words">
+                              DEBUG: {detailedError}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
