@@ -1,0 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #00D1FF;
+  --color-accent-muted: #005A6F;
+  --color-bg-card: #141414;
+  --color-border-custom: #262626;
+  --color-text-dim: #8E9299;
+  
+  --color-brand-bg: #0A0A0A;
+  --color-brand-sidebar: #0F0F0F;
+  
+  --font-sans: "Outfit", "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-[#E5E5E5] font-sans antialiased;
+  }
+}
+
+.glass {
+  @apply bg-white/[0.02] backdrop-blur-xl border border-white/5;
+}
+
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-br from-white to-white/60;
+}
