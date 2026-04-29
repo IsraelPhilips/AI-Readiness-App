@@ -28,8 +28,9 @@ export interface FieldData {
 }
 
 export interface QuizState {
-  currentStep: 'landing' | 'field-selection' | 'quiz' | 'results';
+  currentStep: 'landing' | 'field-selection' | 'quiz' | 'results' | 'history';
   selectedField: string | null;
   answers: Record<string, number>;
   currentQuestionIndex: number;
+  historicalResult?: any;
 }

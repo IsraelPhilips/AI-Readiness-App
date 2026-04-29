@@ -5,12 +5,13 @@ import {
   Code, Layout, Megaphone, Target, Headset, Users, BarChart, Scale, 
   Stethoscope, GraduationCap, PenTool, Palette, Activity, Database, 
   Rocket, Home, Briefcase, Calendar, Search, Compass, 
-  ChevronRight, ArrowLeft, RefreshCw, Share2, Activity as ActivityIcon, CheckCircle2, AlertCircle, TrendingUp
+  ChevronRight, ArrowLeft, RefreshCw, Share2, Activity as ActivityIcon, CheckCircle2, AlertCircle, TrendingUp, History, LogOut, User
 } from 'lucide-react';
 import { questionBank } from '../data/questionBank';
 import { ReadinessLevel, QuizState, FieldData } from '../types';
 import { supabase } from '../lib/supabase';
 import AuthModal from './AuthModal';
+import UserHistory from './UserHistory';
 
 const ICON_MAP: Record<string, any> = {
   Code, Layout, Megaphone, Target, Headset, Users, BarChart, Scale,
@@ -28,6 +29,7 @@ export default function MainQuiz() {
     currentQuestionIndex: 0
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -44,22 +46,25 @@ export default function MainQuiz() {
   const selectedFieldData = state.selectedField ? questionBank[state.selectedField] : null;
 
   const totalScore = useMemo(() => {
+    if (state.historicalResult) return state.historicalResult.total_score;
     if (!selectedFieldData) return 0;
     const scores = Object.values(state.answers) as number[];
     const sum = scores.reduce((a, b) => a + b, 0);
     const maxPossible = selectedFieldData.questions.length * 6;
     return Math.round((sum / maxPossible) * 100);
-  }, [state.answers, selectedFieldData]);
+  }, [state.answers, selectedFieldData, state.historicalResult]);
 
   const readinessLevel = useMemo((): ReadinessLevel => {
+    if (state.historicalResult) return state.historicalResult.readiness_level;
     if (totalScore < 25) return 'AI Beginner';
     if (totalScore < 50) return 'AI Aware';
     if (totalScore < 75) return 'AI Active User';
     if (totalScore < 90) return 'AI Power User';
     return 'AI-Ready Leader';
-  }, [totalScore]);
+  }, [totalScore, state.historicalResult]);
 
   const categoryScores = useMemo(() => {
+    if (state.historicalResult) return state.historicalResult.category_scores;
     if (!selectedFieldData) return {};
     const categories: Record<string, { total: number, max: number }> = {};
     
@@ -74,7 +79,7 @@ export default function MainQuiz() {
       acc[cat] = Math.round((vals.total / vals.max) * 100);
       return acc;
     }, {} as Record<string, number>);
-  }, [state.answers, selectedFieldData]);
+  }, [state.answers, selectedFieldData, state.historicalResult]);
 
   const resetQuiz = () => {
     setState({
@@ -117,8 +122,9 @@ export default function MainQuiz() {
 
   // Save to Supabase when reaching results
   useEffect(() => {
-    if (state.currentStep === 'results' && state.selectedField && supabase) {
+    if (state.currentStep === 'results' && state.selectedField && !state.historicalResult && supabase) {
       const saveResult = async () => {
+        setSaveStatus('saving');
         console.log('Initiating database sync for results...');
         try {
           const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
@@ -138,16 +144,19 @@ export default function MainQuiz() {
           
           if (error) {
             console.error('CRITICAL: Database write failed:', error);
+            setSaveStatus('error');
           } else {
             console.log('Database sync successful. Record ID:', data?.[0]?.id);
+            setSaveStatus('saved');
           }
         } catch (err) {
           console.error('Unexpected error during database sync:', err);
+          setSaveStatus('error');
         }
       };
       saveResult();
     }
-  }, [state.currentStep, state.selectedField, totalScore, readinessLevel]);
+  }, [state.currentStep, state.selectedField, totalScore, readinessLevel, state.historicalResult]);
 
   return (
     <div className="min-h-screen bg-brand-bg text-[#E5E5E5] font-sans selection:bg-accent/30 relative overflow-hidden">
@@ -156,6 +165,31 @@ export default function MainQuiz() {
         <div className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-accent/5 blur-[120px] rounded-full"></div>
         <div className="absolute top-[20%] -right-[10%] w-[40%] h-[40%] bg-indigo-500/5 blur-[120px] rounded-full"></div>
         <div className="absolute -bottom-[10%] left-[20%] w-[50%] h-[50%] bg-accent-muted/5 blur-[120px] rounded-full"></div>
+      </div>
+
+      <div className="absolute top-6 right-6 z-50 flex items-center gap-4">
+        {user ? (
+          <div className="flex items-center gap-3">
+            <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl flex items-center gap-2">
+              <User size={14} className="text-accent" />
+              <span className="text-[10px] font-black text-text-dim uppercase tracking-widest">{user.email?.split('@')[0]}</span>
+            </div>
+            <button 
+              onClick={() => supabase?.auth.signOut()}
+              className="p-2.5 bg-bg-card hover:bg-rose-500/10 text-text-dim hover:text-rose-400 rounded-xl transition-all border border-border-custom"
+              title="Sign Out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setIsAuthModalOpen(true)}
+            className="px-6 py-2.5 bg-accent/10 hover:bg-accent text-accent hover:text-black rounded-xl font-black text-[10px] uppercase tracking-widest border border-accent/20 transition-all"
+          >
+            Authenticate
+          </button>
+        )}
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8 md:py-16 relative z-10">
@@ -194,6 +228,15 @@ export default function MainQuiz() {
                   START ASSESSMENT
                   <ChevronRight className="ml-2 group-hover:translate-x-1 transition-transform" />
                 </button>
+                {user && (
+                   <button
+                    onClick={() => setState(s => ({ ...s, currentStep: 'history' }))}
+                    className="flex items-center gap-3 px-8 py-3 bg-bg-card hover:bg-border-custom text-white rounded-xl border border-border-custom font-black text-[10px] uppercase tracking-widest transition-all"
+                  >
+                    <History size={16} className="text-accent" />
+                    Recall Trajectory
+                  </button>
+                )}
                 <div className="flex items-center text-text-dim text-sm font-bold tracking-tight">
                   <CheckCircle2 size={16} className="mr-2 text-accent" />
                   15 FIELD-SPECIFIC QUESTIONS • DESIGNED FOR PROFESSIONALS
@@ -345,6 +388,20 @@ export default function MainQuiz() {
             </motion.div>
           )}
 
+          {state.currentStep === 'history' && (
+            <UserHistory 
+              onBack={() => setState(s => ({ ...s, currentStep: 'landing' }))}
+              onSelectResult={(result) => {
+                setState(s => ({
+                  ...s,
+                  currentStep: 'results',
+                  selectedField: result.selected_field,
+                  historicalResult: result
+                }));
+              }}
+            />
+          )}
+
           {state.currentStep === 'results' && selectedFieldData && (
             <motion.div
               key="results"
@@ -357,9 +414,29 @@ export default function MainQuiz() {
                 <div className="absolute top-0 right-0 w-96 h-96 bg-accent/20 blur-[100px] -mr-48 -mt-48 rounded-full"></div>
                 <div className="relative z-10 space-y-8">
                   <div className="inline-block px-4 py-1.5 rounded-full bg-accent-muted/30 text-accent text-[10px] font-black uppercase tracking-[0.2em] border border-accent/20">
-                    DIAGNOSTIC REPORT: {selectedFieldData.name}
+                    {state.historicalResult ? 'HISTORICAL ARCHIVE' : 'DIAGNOSTIC REPORT'}: {selectedFieldData.name}
                   </div>
                   <div className="flex flex-col items-center">
+                    <div className="mb-4">
+                      {saveStatus === 'saving' && (
+                        <div className="flex items-center gap-2 text-accent text-[8px] font-black uppercase tracking-widest animate-pulse">
+                          <RefreshCw size={10} className="animate-spin" />
+                          Syncing with Core...
+                        </div>
+                      )}
+                      {saveStatus === 'saved' && (
+                        <div className="flex items-center gap-2 text-emerald-400 text-[8px] font-black uppercase tracking-widest">
+                          <CheckCircle2 size={10} />
+                          Synapse Archive Secured
+                        </div>
+                      )}
+                      {saveStatus === 'error' && (
+                        <div className="flex items-center gap-2 text-rose-400 text-[8px] font-black uppercase tracking-widest">
+                          <AlertCircle size={10} />
+                          Sync Interrupted
+                        </div>
+                      )}
+                    </div>
                     <div className="relative w-56 h-56 flex items-center justify-center">
                       <svg className="w-full h-full transform -rotate-90">
                         <circle cx="112" cy="112" r="100" fill="none" stroke="currentColor" strokeWidth="4" className="text-white/5" />
@@ -500,7 +577,10 @@ export default function MainQuiz() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-center gap-6 pt-8">
-                <button onClick={resetQuiz} className="px-12 py-5 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-[1.03] transition-all flex items-center justify-center shadow-xl shadow-white/5"><RefreshCw size={14} className="mr-3" />INITIATE NEW DIAGNOSTIC</button>
+                <button onClick={resetQuiz} className="px-12 py-5 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-[1.03] transition-all flex items-center justify-center shadow-xl shadow-white/5">
+                  <RefreshCw size={14} className="mr-3" />
+                  {state.historicalResult ? 'EXIT ARCHIVE' : 'INITIATE NEW DIAGNOSTIC'}
+                </button>
                 <button 
                   onClick={handleCapture}
                   disabled={isCapturing}
