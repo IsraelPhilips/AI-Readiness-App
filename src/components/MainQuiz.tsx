@@ -153,7 +153,7 @@ export default function MainQuiz() {
             user_id: currentUser?.id || null
           };
 
-          const { data, error } = await supabase.from('quiz_results').insert(payload).select();
+          const { error } = await supabase.from('quiz_results').insert(payload);
           
           if (error) {
             console.error('CRITICAL: Database write failed:', error);
@@ -170,7 +170,7 @@ export default function MainQuiz() {
 
             setDetailedError(errorMessage + (error.details ? ` (${error.details})` : '') + (error.hint ? ` - Hint: ${error.hint}` : ''));
           } else {
-            console.log('Database sync successful. Record ID:', data?.[0]?.id);
+            console.log('Database sync successful.');
             setSaveStatus('saved');
             setDetailedError(null);
           }
