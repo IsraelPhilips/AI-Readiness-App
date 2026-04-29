@@ -36,7 +36,12 @@ export default function UserHistory({ onBack, onSelectResult }: UserHistoryProps
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('column "user_id" does not exist')) {
+          throw new Error("Missing 'user_id' column in quiz_results. Run: ALTER TABLE quiz_results ADD COLUMN user_id UUID REFERENCES auth.users(id);");
+        }
+        throw error;
+      }
       setResults(data || []);
     } catch (err: any) {
       console.error('Error fetching history:', err);

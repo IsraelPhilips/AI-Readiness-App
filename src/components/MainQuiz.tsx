@@ -82,6 +82,16 @@ export default function MainQuiz() {
     }, {} as Record<string, number>);
   }, [state.answers, selectedFieldData, state.historicalResult]);
 
+  const strengths = useMemo(() => {
+    if (state.historicalResult) return state.historicalResult.strengths;
+    return generateStrengths(categoryScores, totalScore);
+  }, [categoryScores, totalScore, state.historicalResult]);
+
+  const improvementAreas = useMemo(() => {
+    if (state.historicalResult) return state.historicalResult.improvement_areas;
+    return generateImprovementAreas(categoryScores, totalScore);
+  }, [categoryScores, totalScore, state.historicalResult]);
+
   const resetQuiz = () => {
     setState({
       currentStep: 'landing',
@@ -89,6 +99,8 @@ export default function MainQuiz() {
       answers: {},
       currentQuestionIndex: 0
     });
+    setSaveStatus('idle');
+    setDetailedError(null);
   };
 
   const handleCapture = async () => {
@@ -136,8 +148,8 @@ export default function MainQuiz() {
             total_score: totalScore,
             readiness_level: readinessLevel,
             category_scores: categoryScores,
-            strengths: generateStrengths(categoryScores, totalScore),
-            improvement_areas: generateImprovementAreas(categoryScores, totalScore),
+            strengths: strengths,
+            improvement_areas: improvementAreas,
             user_id: currentUser?.id || null
           };
 
@@ -146,7 +158,17 @@ export default function MainQuiz() {
           if (error) {
             console.error('CRITICAL: Database write failed:', error);
             setSaveStatus('error');
-            setDetailedError(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` - Hint: ${error.hint}` : ''));
+            let errorMessage = error.message;
+            const isMissingColumn = error.message.includes("column \"user_id\" does not exist") || error.message.includes("user_id");
+            const isRLSError = error.message.includes("row-level security policy");
+
+            if (isMissingColumn) {
+              errorMessage = "Database Schema Mismatch: The 'user_id' column is missing.";
+            } else if (isRLSError) {
+              errorMessage = "Row-Level Security Violation: Your database is blocking the save. You need to enable RLS policies.";
+            }
+
+            setDetailedError(errorMessage + (error.details ? ` (${error.details})` : '') + (error.hint ? ` - Hint: ${error.hint}` : ''));
           } else {
             console.log('Database sync successful. Record ID:', data?.[0]?.id);
             setSaveStatus('saved');
@@ -441,8 +463,30 @@ export default function MainQuiz() {
                             Sync Interrupted
                           </div>
                           {detailedError && (
-                            <div className="max-w-xs p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] text-rose-300 font-mono text-center break-words">
-                              DEBUG: {detailedError}
+                            <div className="max-w-md p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] text-rose-300 font-mono text-left break-words space-y-3">
+                              <p className="font-black text-rose-400">DEBUG DIAGNOSTIC:</p>
+                              <p>{detailedError}</p>
+                              {detailedError.includes('user_id') && !detailedError.includes('security') && (
+                                <div className="p-3 bg-black/40 rounded-lg border border-rose-500/30">
+                                  <p className="text-white font-bold mb-2">RUN THIS SQL (COLUMN FIX):</p>
+                                  <pre className="text-[9px] select-all">ALTER TABLE quiz_results ADD COLUMN user_id UUID REFERENCES auth.users(id);</pre>
+                                </div>
+                              )}
+                              {detailedError.includes('security') && (
+                                <div className="p-3 bg-black/40 rounded-lg border border-rose-500/30">
+                                  <p className="text-white font-bold mb-2">RUN THIS SQL (PERMISSIONS FIX):</p>
+                                  <pre className="text-[9px] select-all overflow-x-auto">
+{`ALTER TABLE quiz_results ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow anyone to insert results" 
+ON quiz_results FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Users can view own results" 
+ON quiz_results FOR SELECT TO authenticated 
+USING (auth.uid() = user_id);`}
+                                  </pre>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -508,7 +552,7 @@ export default function MainQuiz() {
                   <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 -mr-12 -mt-12 rounded-full blur-xl"></div>
                   <h4 className="font-black flex items-center text-accent text-[10px] uppercase tracking-[0.25em]"><TrendingUp className="mr-3" size={14} />Established Strengths</h4>
                   <ul className="space-y-4">
-                    {generateStrengths(categoryScores, totalScore).map((s, i) => (
+                    {strengths.map((s, i) => (
                       <li key={i} className="flex items-start text-sm text-[#E5E5E5] font-medium"><span className="text-accent mr-4 font-black">/</span>{s}</li>
                     ))}
                   </ul>
@@ -517,7 +561,7 @@ export default function MainQuiz() {
                   <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 -mr-12 -mt-12 rounded-full blur-xl"></div>
                   <h4 className="font-black flex items-center text-rose-400 text-[10px] uppercase tracking-[0.25em]"><AlertCircle className="mr-3" size={14} />Friction Points</h4>
                   <ul className="space-y-4">
-                    {generateImprovementAreas(categoryScores, totalScore).map((a, i) => (
+                    {improvementAreas.map((a, i) => (
                       <li key={i} className="flex items-start text-sm text-[#E5E5E5] font-medium"><span className="text-rose-400 mr-4 font-black">○</span>{a}</li>
                     ))}
                   </ul>
